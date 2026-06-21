@@ -1,0 +1,15 @@
+{
+  "services": [
+    {
+      "name": "backend",
+      "rootDirectory": "backend",
+      "build": {
+        "builder": "NIXPACKS",
+        "buildCommand": "npm install"
+      },
+      "deploy": {
+        "startCommand": "npm start"
+      }
+    }
+  ]
+}
