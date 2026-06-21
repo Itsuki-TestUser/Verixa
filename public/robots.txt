@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://verixaai-rag-app.vercel.app/sitemap.xml
