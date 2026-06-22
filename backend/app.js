@@ -10,6 +10,7 @@ import workspaceRoutes from "./routes/workspaceRoutes.js";
 import { apiLimiter } from "./middleware/rateLimiter.js";
 const app = express();
 app.use(cors());
+app.set("trust proxy", 1);
 app.use("/api", apiLimiter);
 app.use(express.json());
 app.use("/api/workspaces", workspaceRoutes);
