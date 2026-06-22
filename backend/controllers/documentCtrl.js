@@ -7,7 +7,6 @@ const pdfParse = require("pdf-parse");
 
 export const uploadDocument = async (req, res, next) => {
   try {
-    // Get workspaceId from header or find default
     let workspaceId = req.headers["x-workspace-id"] || req.body.workspaceId;
 
     if (!workspaceId) {
@@ -28,70 +27,72 @@ export const uploadDocument = async (req, res, next) => {
 
     const documentName = req.file.originalname;
     const category = req.body.category || "Other";
+    const fileExtension = documentName.split(".").pop().toLowerCase();
 
-    const pdfData = await pdfParse(req.file.buffer);
-    const text = pdfData.text;
+    console.log(
+      "📄 File:",
+      documentName,
+      "Size:",
+      req.file.size,
+      "Type:",
+      fileExtension,
+    );
+
+    let text = "";
+
+    // Handle different file types
+    if (fileExtension === "pdf") {
+      try {
+        const pdfData = await pdfParse(req.file.buffer);
+        text = pdfData.text;
+        console.log("✅ PDF parsed, text length:", text.length);
+      } catch (pdfError) {
+        console.error("PDF Parse Error:", pdfError.message);
+        res.status(400);
+        throw new Error(
+          "Invalid or corrupted PDF file. Please check the file and try again.",
+        );
+      }
+    } else if (["txt", "md", "csv"].includes(fileExtension)) {
+      text = req.file.buffer.toString("utf-8");
+      console.log("✅ Text file read, length:", text.length);
+    } else if (["doc", "docx"].includes(fileExtension)) {
+      // For DOCX, you'd need mammoth or another parser
+      res.status(400);
+      throw new Error(
+        "DOCX files are not supported yet. Please convert to PDF first.",
+      );
+    } else {
+      res.status(400);
+      throw new Error(
+        `Unsupported file type: .${fileExtension}. Please upload PDF, TXT, MD, or CSV files.`,
+      );
+    }
+
     if (!text || text.trim().length === 0) {
       res.status(400);
-      throw new Error("Could not extract any text from the given document.");
+      throw new Error(
+        "Could not extract any text from the document. The file might be empty or image-based.",
+      );
     }
 
     const doc = await Document.create({
       title: documentName,
       originalName: documentName,
       category,
-      filePath: "N/A", // No file path since we're using memory
+      filePath: "N/A",
       uploadedBy: req.user._id,
       workspaceId: workspaceId,
     });
 
     await createEmbedding(text, doc._id.toString(), category, workspaceId);
 
-    // No need to delete file from disk since it was never saved
-
     res.json({
       message: "Document processed and embedded successfully",
       document: doc,
     });
   } catch (err) {
-    console.error("UPLOAD ERROR:", err);
-    // No file cleanup needed since we're using memory storage
+    console.error("UPLOAD ERROR:", err.message);
     next(err);
-  }
-};
-
-export const getDocuments = async (req, res) => {
-  try {
-    const filter =
-      req.query.category && req.query.category !== "All"
-        ? { category: req.query.category }
-        : {};
-    const documents = await Document.find(filter)
-      .sort({ createdAt: -1 })
-      .populate("uploadedBy", "name");
-    res.json(documents);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const deleteDocument = async (req, res) => {
-  try {
-    const document = await Document.findById(req.params.id);
-    if (!document) {
-      return res.status(404).json({ message: "Document not found" });
-    }
-
-    // Delete only chunks belonging to this specific document
-    await Chunk.deleteMany({
-      documentName: document.originalName,
-      workspaceId: req.workspaceId,
-      category: document.category,
-    });
-
-    await Document.findByIdAndDelete(req.params.id);
-    res.json({ message: "Document removed" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
   }
 };
