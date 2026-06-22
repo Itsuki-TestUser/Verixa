@@ -29,10 +29,8 @@ export const uploadDocument = async (req, res, next) => {
     const documentName = req.file.originalname;
     const category = req.body.category || "Other";
 
-    // Use buffer directly from memory instead of reading from disk
     const pdfData = await pdfParse(req.file.buffer);
     const text = pdfData.text;
-
     if (!text || text.trim().length === 0) {
       res.status(400);
       throw new Error("Could not extract any text from the given document.");
