@@ -1,6 +1,6 @@
 import { createEmbedding } from "../services/embeddingService.js";
 import { Document } from "../models/documentModel.js";
-import Chunk from "../models/chunkModel.js";
+import { Chunk } from "../models/chunkModel.js";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
