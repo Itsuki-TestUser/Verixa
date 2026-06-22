@@ -17,4 +17,5 @@ const chunkSchema = new mongoose.Schema({
 
 chunkSchema.index({ category: 1 });
 
-export default mongoose.model("Chunk", chunkSchema);
+const Chunk = mongoose.model("Chunk", chunkSchema);
+export { Chunk };
