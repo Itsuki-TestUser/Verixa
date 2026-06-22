@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import Chunk from "../models/chunkModel.js";
+import { Chunk } from "../models/chunkModel.js";
 import dotenv from "dotenv";
 import process from "process";
 dotenv.config();
