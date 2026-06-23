@@ -1,16 +1,46 @@
-import { createEmbedding } from "../services/embeddingService.js";
-import { Document } from "../models/documentModel.js";
-import { Chunk } from "../models/chunkModel.js";
+import fs from "fs";
+import path from "path";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
+const mammoth = require("mammoth");
+import { trackUsage } from "../utils/usageTracker.js";
+import { createSingleEmbedding } from "../services/embeddingService.js";
+import { Document } from "../models/documentModel.js";
+import Chunk from "../models/chunkModel.js";
+import Workspace from "../models/workspaceModel.js";
+
+function cleanText(text) {
+  return text
+    .replace(/[\r\n]+/g, " ")
+    .replace(/HR Policies – Verixa Corp/gi, "")
+    .replace(/([A-Za-z])\1{2,}/g, "$1")
+    .replace(/[^\x20-\x7E]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function chunkText(text, chunkSize = 200) {
+  const words = text.split(" ");
+  const chunks = [];
+  for (let i = 0; i < words.length; i += chunkSize) {
+    chunks.push(words.slice(i, i + chunkSize).join(" "));
+  }
+  return chunks;
+}
 
 export const uploadDocument = async (req, res, next) => {
   try {
-    let workspaceId = req.headers["x-workspace-id"] || req.body.workspaceId;
+    if (!req.file) {
+      res.status(400);
+      throw new Error("No file uploaded!");
+    }
 
-    if (!workspaceId) {
-      const Workspace = (await import("../models/workspaceModel.js")).default;
+    // Get workspaceId
+    let workspaceId =
+      req.workspaceId || req.headers["x-workspace-id"] || req.body.workspaceId;
+
+    if (!workspaceId && req.user?._id) {
       const workspace = await Workspace.findOne({
         owner: req.user._id,
         isDefault: true,
@@ -20,79 +50,116 @@ export const uploadDocument = async (req, res, next) => {
 
     console.log("🔍 FINAL workspaceId:", workspaceId);
 
-    if (!req.file) {
-      res.status(400);
-      throw new Error("No file uploaded! Ensure it is a valid PDF or DOCX.");
-    }
-
+    const filePath = req.file.path;
     const documentName = req.file.originalname;
     const category = req.body.category || "Other";
-    const fileExtension = documentName.split(".").pop().toLowerCase();
-
-    console.log(
-      "📄 File:",
-      documentName,
-      "Size:",
-      req.file.size,
-      "Type:",
-      fileExtension,
-    );
 
     let text = "";
+    const ext = path.extname(documentName).toLowerCase();
 
-    // Handle different file types
-    if (fileExtension === "pdf") {
-      try {
-        const pdfData = await pdfParse(req.file.buffer);
-        text = pdfData.text;
-        console.log("✅ PDF parsed, text length:", text.length);
-      } catch (pdfError) {
-        console.error("PDF Parse Error:", pdfError.message);
-        res.status(400);
-        throw new Error(
-          "Invalid or corrupted PDF file. Please check the file and try again.",
-        );
-      }
-    } else if (["txt", "md", "csv"].includes(fileExtension)) {
-      text = req.file.buffer.toString("utf-8");
-      console.log("✅ Text file read, length:", text.length);
-    } else if (["doc", "docx"].includes(fileExtension)) {
-      // For DOCX, you'd need mammoth or another parser
-      res.status(400);
-      throw new Error(
-        "DOCX files are not supported yet. Please convert to PDF first.",
-      );
+    if (ext === ".pdf") {
+      const buffer = fs.readFileSync(filePath);
+      const pdfData = await pdfParse(buffer);
+      text = pdfData.text;
+    } else if (ext === ".docx" || ext === ".doc") {
+      const result = await mammoth.extractRawText({ path: filePath });
+      text = result.value;
     } else {
-      res.status(400);
-      throw new Error(
-        `Unsupported file type: .${fileExtension}. Please upload PDF, TXT, MD, or CSV files.`,
-      );
+      text = fs.readFileSync(filePath, "utf-8");
     }
 
     if (!text || text.trim().length === 0) {
-      res.status(400);
-      throw new Error(
-        "Could not extract any text from the document. The file might be empty or image-based.",
-      );
+      throw new Error("No text extracted from document");
     }
+
+    const cleanedText = cleanText(text);
+    const chunks = chunkText(cleanedText, 200);
+
+    console.log("Total chunks:", chunks.length);
 
     const doc = await Document.create({
       title: documentName,
       originalName: documentName,
       category,
-      filePath: "N/A",
+      filePath: `uploads/${req.file.filename}`,
       uploadedBy: req.user._id,
       workspaceId: workspaceId,
     });
+    await trackUsage({
+      workspaceId: req.workspaceId,
+      userId: req.user._id,
+      action: "upload",
+      details: { documentName: documentName },
+      documentSize: req.file.size,
+    });
 
-    await createEmbedding(text, doc._id.toString(), category, workspaceId);
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (!chunk.trim()) continue;
+
+      const embedding = await createSingleEmbedding(chunk);
+      await Chunk.create({
+        text: chunk,
+        embedding,
+        documentName: doc.title,
+        chunkIndex: i,
+        category,
+        workspaceId: workspaceId,
+      });
+    }
 
     res.json({
-      message: "Document processed and embedded successfully",
+      message: "Document uploaded & processed successfully",
+      chunks: chunks.length,
       document: doc,
     });
   } catch (err) {
-    console.error("UPLOAD ERROR:", err.message);
+    console.error("UPLOAD ERROR:", err);
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     next(err);
+  }
+};
+
+export const getDocuments = async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.category && req.query.category !== "All") {
+      filter.category = req.query.category;
+    }
+    if (req.workspaceId) {
+      filter.workspaceId = req.workspaceId;
+    }
+    const documents = await Document.find(filter)
+      .sort({ createdAt: -1 })
+      .populate("uploadedBy", "name");
+    res.json(documents);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteDocument = async (req, res) => {
+  try {
+    const document = await Document.findById(req.params.id);
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+    await trackUsage({
+      workspaceId: req.workspaceId,
+      userId: req.user._id,
+      action: "document_delete",
+      details: { documentName: document.originalName },
+    });
+    await Chunk.deleteMany({
+      documentName: document.originalName,
+      workspaceId: req.workspaceId,
+    });
+
+    await document.deleteOne();
+    res.json({ message: "Document removed" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };

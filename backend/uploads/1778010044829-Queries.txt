@@ -1,0 +1,23 @@
+Questions to Test Your Verixa AI App
+
+Use these queries in your app 👇
+
+🔹 Basic Questions
+What is Agentic AI?
+Difference between traditional AI and Agentic AI
+What are the key features of Agentic AI?
+🔹 Intermediate Questions
+How does Agentic AI use memory and tools?
+Explain RAG and its role in enterprise AI
+What are real-world applications of Agentic AI?
+🔹 Advanced Questions (Perfect for testing RAG quality)
+How can Agentic AI be used in enterprise automation?
+Explain challenges of Agentic AI with examples
+Why is RAG important for AI systems like Verixa?
+Compare multimodal AI and traditional AI systems
+🔥 Stress Test Questions (for your system quality)
+Summarize this document in bullet points
+Explain this topic like I’m 5
+Generate a quiz based on this document
+Extract all key technologies mentioned
+Give use cases specifically for HR department

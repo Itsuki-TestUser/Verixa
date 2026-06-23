@@ -4,7 +4,8 @@ import { trackUsage } from "../utils/usageTracker.js";
 import Usage from "../models/usageModel.js";
 import mongoose from "mongoose";
 import Conversation from "../models/conversationModel.js";
-import { Chunk } from "../models/chunkModel.js";
+import Chunk from "../models/chunkModel.js";
+
 // Add member to workspace
 export const addMember = async (req, res) => {
   try {

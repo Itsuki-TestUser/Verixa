@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
-  { timestamps: true }, 
+  { timestamps: true },
 );
 
 userSchema.pre("save", async function () {
